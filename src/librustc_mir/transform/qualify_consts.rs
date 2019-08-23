@@ -1723,6 +1723,19 @@ impl MirPass for QualifyAndPromoteConstants {
             }
         }
 
+        // HACK(eddyb) try to prevent global mutable state in proc macros.
+        // (this is not perfect and could also have false positives)
+        if mode == Mode::Static || mode == Mode::StaticMut {
+            use rustc::session::config::CrateType;
+            if tcx.sess.crate_types.borrow().contains(&CrateType::ProcMacro) {
+                let ty = body.return_ty();
+                let param_env = ty::ParamEnv::empty();
+                if mode == Mode::StaticMut || !ty.is_freeze(tcx, param_env, DUMMY_SP) {
+                    tcx.sess.span_err(body.span, "mutable global state in a proc-macro");
+                }
+            }
+        }
+
         // Statics must be Sync.
         if mode == Mode::Static {
             // `#[thread_local]` statics don't have to be `Sync`.
